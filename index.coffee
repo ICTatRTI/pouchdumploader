@@ -32,6 +32,7 @@ app.get '/', (req,res) ->
   "
 
 app.post '/backup', (req,res,next) ->
+
   console.log "Backup request"
   db = new PouchDB(request.body.destination)
   db.load(req.body.value).then ->
@@ -40,12 +41,13 @@ app.post '/backup', (req,res,next) ->
   .catch (error) -> console.log error
 
 app.post '/file', upload.single('backup'), (req,res,next) ->
-  console.log req
+  fs.unlinkSync '/tmp/backup.pouchdb'
   zip = new admZip(req.file.path)
   zip.extractAllTo '/tmp'
   fs.readFile '/tmp/backup.pouchdb', (err,data) ->
     db = new PouchDB(req.body.destination)
     db.load(data.toString()).then ->
+      console.log "#{req.file.path} loaded"
       res.send "Backup loaded"
     .catch (error) -> console.log error
 
