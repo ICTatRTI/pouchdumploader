@@ -7,6 +7,7 @@ admZip = require 'adm-zip'
 fs = require 'fs'
 glob = require 'glob'
 bodyParser = require 'body-parser'
+_ = require 'underscore'
 
 app = express()
 
@@ -27,8 +28,16 @@ app.get '/', (req,res) ->
         <br/>
         <input type='file' name='backup'>
         <br/>
-        <input type='submit'>
+        <input type='submit' value='upload single'>
       </form>
+
+      <form action='/multi' method='post' enctype='multipart/form-data'>
+        Destination <small>(e.g.: https://username:password@cococloud.co/databasename)</small>: <input name='destination'>
+        <br/>
+        <input type='file' name='backups' multiple>
+        <input type='submit' value='upload multiple'>
+      </form>
+
     </html>
   "
 
@@ -46,6 +55,8 @@ app.post '/file', upload.single('backup'), (req,res,next) ->
     fs.unlinkSync '/tmp/backup.pouchdb'
   catch error
 
+  console.log req
+
   zip = new admZip(req.file.path)
   zip.extractAllTo '/tmp'
   fs.readFile '/tmp/backup.pouchdb', (err,data) ->
@@ -53,22 +64,32 @@ app.post '/file', upload.single('backup'), (req,res,next) ->
     db.load(data.toString()).then ->
       console.log "#{req.file.path} loaded"
       res.send "Backup loaded"
+      try
+        fs.unlinkSync '/tmp/backup.pouchdb'
+      catch error
     .catch (error) -> console.log error
 
-
-app.post '/multi', upload.array('backup'), (req,res,next) ->
+app.post '/multi', upload.any(), (req,res,next) ->
   try
     fs.unlinkSync '/tmp/backup.pouchdb'
   catch error
 
-  zip = new admZip(req.file.path)
-  zip.extractAllTo '/tmp'
-  fs.readFile '/tmp/backup.pouchdb', (err,data) ->
-    db = new PouchDB(req.body.destination)
-    db.load(data.toString()).then ->
-      console.log "#{req.file.path} loaded"
-      res.send "Backup loaded"
-    .catch (error) -> console.log error
+  counter = 0
+  _(req.files).each (file) =>
+    console.log file
+    zip = new admZip(file.path)
+    zip.extractAllTo '/tmp'
+    fs.readFile '/tmp/backup.pouchdb', (err,data) ->
+      db = new PouchDB(req.body.destination)
+      db.load(data.toString()).then ->
+        console.log "#{file.path} loaded"
+        counter += 1
+        try
+          fs.unlinkSync '/tmp/backup.pouchdb'
+        catch error
+      .catch (error) -> console.log error
+
+    res.send "Loaded #{counter} backup files."
 
 
 app.listen 3000, ->
