@@ -5,6 +5,7 @@ PouchDB = require 'pouchdb'
 PouchDB.plugin(require('pouchdb-load'))
 admZip = require 'adm-zip'
 fs = require 'fs'
+glob = require 'glob'
 bodyParser = require 'body-parser'
 
 app = express()
@@ -32,22 +33,43 @@ app.get '/', (req,res) ->
   "
 
 app.post '/backup', (req,res,next) ->
+
   console.log "Backup request"
-  db = new PouchDB(request.body.destination)
+  db = new PouchDB(req.body.destination)
   db.load(req.body.value).then ->
     console.log "Backup loaded"
     res.send "Backup loaded"
   .catch (error) -> console.log error
 
 app.post '/file', upload.single('backup'), (req,res,next) ->
-  console.log req
+  try
+    fs.unlinkSync '/tmp/backup.pouchdb'
+  catch error
+
   zip = new admZip(req.file.path)
   zip.extractAllTo '/tmp'
   fs.readFile '/tmp/backup.pouchdb', (err,data) ->
     db = new PouchDB(req.body.destination)
     db.load(data.toString()).then ->
+      console.log "#{req.file.path} loaded"
       res.send "Backup loaded"
     .catch (error) -> console.log error
+
+
+app.post '/multi', upload.array('backup'), (req,res,next) ->
+  try
+    fs.unlinkSync '/tmp/backup.pouchdb'
+  catch error
+
+  zip = new admZip(req.file.path)
+  zip.extractAllTo '/tmp'
+  fs.readFile '/tmp/backup.pouchdb', (err,data) ->
+    db = new PouchDB(req.body.destination)
+    db.load(data.toString()).then ->
+      console.log "#{req.file.path} loaded"
+      res.send "Backup loaded"
+    .catch (error) -> console.log error
+
 
 app.listen 3000, ->
   console.log('Example app listening on port 3000!')
