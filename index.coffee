@@ -3,7 +3,8 @@ multer = require 'multer'
 upload = multer(dest:'uploads/')
 PouchDB = require 'pouchdb'
 PouchDB.plugin(require('pouchdb-load'))
-admZip = require 'adm-zip'
+#admZip = require 'adm-zip'
+unzipper = require 'unzipper'
 fs = require 'fs'
 glob = require 'glob'
 bodyParser = require 'body-parser'
@@ -27,7 +28,6 @@ app.get '/', (req,res) ->
         Destination <small>(e.g.: https://username:password@cococloud.co/databasename)</small>: <input name='destination'>
         <br/>
         <input type='file' name='backup'>
-        <br/>
         <input type='submit' value='upload single'>
       </form>
 
@@ -55,19 +55,18 @@ app.post '/file', upload.single('backup'), (req,res,next) ->
     fs.unlinkSync '/tmp/backup.pouchdb'
   catch error
 
-  console.log req
-
-  zip = new admZip(req.file.path)
-  zip.extractAllTo '/tmp'
-  fs.readFile '/tmp/backup.pouchdb', (err,data) ->
-    db = new PouchDB(req.body.destination)
-    db.load(data.toString()).then ->
-      console.log "#{req.file.path} loaded"
-      res.send "Backup loaded"
-      try
-        fs.unlinkSync '/tmp/backup.pouchdb'
-      catch error
-    .catch (error) -> console.log error
+  fs.createReadStream(req.file.path)
+  .pipe(unzipper.Extract( {path: '/tmp'}))
+  .on "close", =>
+    fs.readFile '/tmp/backup.pouchdb', (err,data) ->
+      db = new PouchDB(req.body.destination)
+      db.load(data.toString()).then ->
+        console.log "#{req.file.path} loaded"
+        res.send "Backup loaded"
+        try
+          fs.unlinkSync '/tmp/backup.pouchdb'
+        catch error
+      .catch (error) -> console.log error
 
 app.post '/multi', upload.any(), (req,res,next) ->
   try
@@ -75,22 +74,26 @@ app.post '/multi', upload.any(), (req,res,next) ->
   catch error
 
   counter = 0
-  _(req.files).each (file) =>
-    console.log file
-    zip = new admZip(file.path)
-    zip.extractAllTo '/tmp'
-    fs.readFile '/tmp/backup.pouchdb', (err,data) ->
-      db = new PouchDB(req.body.destination)
-      db.load(data.toString()).then ->
-        console.log "#{file.path} loaded"
-        counter += 1
-        try
-          fs.unlinkSync '/tmp/backup.pouchdb'
-        catch error
-      .catch (error) -> console.log error
 
-    res.send "Loaded #{counter} backup files."
+  processAllFiles = =>
+    if req.files.length is 0
+      res.send "Loaded #{counter} backup files."
+      return
 
+    fs.createReadStream(req.files.pop().path)
+    .pipe(unzipper.Extract( {path: '/tmp'}))
+    .on "close", =>
+      fs.readFile '/tmp/backup.pouchdb', (err,data) ->
+        db = new PouchDB(req.body.destination)
+        db.load(data.toString()).then ->
+          counter += 1
+          try
+            fs.unlinkSync '/tmp/backup.pouchdb'
+          catch error
+          processAllFiles()
+        .catch (error) -> console.log error
+
+  processAllFiles()
 
 app.listen 3000, ->
   console.log('Example app listening on port 3000!')
